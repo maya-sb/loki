@@ -38,6 +38,7 @@ void setup() {
 
 void loop() {
   Blynk.run();
+  fingerprint();
 }
 
 uint8_t cadastrarFingerprint(){
@@ -205,6 +206,92 @@ uint8_t cadastrarFingerprint(){
     return p;
   }   
 }
+
+
+uint8_t getFingerprintID() {
+  uint8_t p = finger.getImage();
+  switch (p) {
+    case FINGERPRINT_OK:
+      Serial.println("Image tirada!");
+      break;
+    case FINGERPRINT_NOFINGER:
+      Serial.println("Nenhum dedo encontrado.");
+      return p;
+    case FINGERPRINT_PACKETRECIEVEERR:
+      Serial.println("Erro de comunicação.");
+      return p;
+    case FINGERPRINT_IMAGEFAIL:
+      Serial.println("Erro na hora de captar a imagem.");
+      return p;
+    default:
+      Serial.println("Erro desconhecido");
+      return p;
+  }
+
+  // OK success!
+  p = finger.image2Tz();
+  switch (p) {
+    case FINGERPRINT_IMAGEMESS:
+      Serial.println("Imagem muito ruim.");
+      return p;
+    case FINGERPRINT_PACKETRECIEVEERR:
+      Serial.println("Erro de comunicação");
+      return p;
+    case FINGERPRINT_FEATUREFAIL:
+      Serial.println("Não foi possível encontrar os recursos de impressão digital");
+      return p;
+    case FINGERPRINT_INVALIDIMAGE:
+      Serial.println("Não foi possível encontrar os recursos de impressão digital");
+      return p;
+    default:
+      Serial.println("Erro desconhecido");
+      return p;
+  }
+  
+  // OK converted!
+  p = finger.fingerFastSearch();
+  if (p == FINGERPRINT_OK) {
+    Serial.println("Impressão digital reconhecida!");
+  } else if (p == FINGERPRINT_PACKETRECIEVEERR) {
+    Serial.println("Erro de comunicação");
+    return p;
+  } else if (p == FINGERPRINT_NOTFOUND) {
+    Serial.println("Impressão digital não reconhecida!");
+    return p;
+  } else {
+    Serial.println("Erro desconhecido");
+    return p;
+  }   
+  
+  // found a match!
+  Serial.print("Impressão digital reconhecida!");
+
+  return finger.fingerID;
+}
+
+// returns -1 if failed, otherwise returns ID #
+int fingerprint() {
+  uint8_t p = finger.getImage();
+  if (p != FINGERPRINT_OK)  return -1;
+
+  p = finger.image2Tz();
+  if (p != FINGERPRINT_OK)  return -1;
+
+  p = finger.fingerFastSearch();
+  if (p != FINGERPRINT_OK)  return -1;
+  
+  // found a match!
+  Serial.print("Impressão digital reconhecida! "); Serial.print(finger.fingerID);
+
+  // ligar o motor se reconhecer
+  digitalWrite(5, LOW);
+  delay(5000);
+  digitalWrite(5, HIGH);
+  
+  return finger.fingerID; 
+}
+
+
 
 BLYNK_WRITE(V2){
 
