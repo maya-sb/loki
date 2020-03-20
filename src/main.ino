@@ -6,8 +6,8 @@
 #include <WiFiUdp.h>
 
 // Configurando WiFi
-#define WIFI_SSID "NET virtua 305-2.4G"
-#define WIFI_PASSWORD "19829740"
+#define WIFI_SSID ""
+#define WIFI_PASSWORD ""
 
 FirebaseData firebaseData;
 
@@ -460,3 +460,4 @@ int fingerprint() {
   
   return finger.fingerID; 
 }
+
