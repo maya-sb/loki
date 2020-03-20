@@ -1,29 +1,103 @@
 #include <ESP8266WiFi.h>
 #include <BlynkSimpleEsp8266.h>
 #include <Adafruit_Fingerprint.h>
-
-char auth[] = "Xa2Q04vC1tQcl2W_M4y6pO5dDtY_j0XI";
+#include <FirebaseESP8266.h>
+#include <NTPClient.h>
+#include <WiFiUdp.h>
 
 // Configurando WiFi
-char ssid[] = "NET virtua 305-2.4G";
-char pass[] = "19829740";
+#define WIFI_SSID "NET virtua 305-2.4G"
+#define WIFI_PASSWORD "19829740"
+
+FirebaseData firebaseData;
 
 SoftwareSerial mySerial(0, 3);
 Adafruit_Fingerprint finger = Adafruit_Fingerprint(&mySerial);
 
-int id = 1;
+WiFiUDP ntpUDP;
+NTPClient timeClient(ntpUDP);
+
+int id;
+
+
+//cadastro
+int cadastrar;
+String nomeCad;
+String idCad;
+
+uint16_t hours;
+uint16_t minutes;
+uint16_t hoursNow;
+uint16_t minutesNow;
+String timestamps;
+uint16_t paraComparar;
+bool atrasado;
+String nome;
+String pushId;
+
+// uteis
+uint16_t batidosHoje;
+uint16_t quantidade;
+uint16_t compare;
 
 void setup() {
 
-  // Configurando motor
-  pinMode(4, OUTPUT);
-  pinMode(5, OUTPUT);
-
-  digitalWrite(4, HIGH);
-  digitalWrite(5, HIGH);
-
   Serial.begin(9600);
-  Blynk.begin(auth, ssid, pass);
+  
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  Serial.print("connecting");
+  while (WiFi.status() != WL_CONNECTED) {
+    Serial.print(".");
+    delay(500);
+  }
+
+  Serial.println();
+  Serial.print("connected: ");
+  Serial.println(WiFi.localIP());
+  
+  Firebase.begin("late-34a1d.firebaseio.com", "DfpRoYHUMwxkG9chCx1lW31MeYzzibMa3UxGb1LP");
+
+  if (Firebase.getInt(firebaseData, "/quantidade")) {
+    if (firebaseData.dataType() == "int") {
+      quantidade = firebaseData.intData();
+    }
+  } else {
+    Serial.println(firebaseData.errorReason());
+  }
+
+  if (Firebase.getInt(firebaseData, "/batidosHoje")) {
+    if (firebaseData.dataType() == "int") {
+      batidosHoje = firebaseData.intData();
+    }
+  } else {
+    Serial.println(firebaseData.errorReason());
+  }
+
+  if (Firebase.getInt(firebaseData, "/compare")) {
+    if (firebaseData.dataType() == "int") {
+      compare = firebaseData.intData();
+    }
+  } else {
+    Serial.println(firebaseData.errorReason());
+  }
+
+  if (Firebase.getInt(firebaseData, "/horas")) {
+    if (firebaseData.dataType() == "int") {
+      hours = firebaseData.intData();
+    }
+  } else {
+    Serial.println(firebaseData.errorReason());
+  }
+
+  if (Firebase.getInt(firebaseData, "/minutos")) {
+    if (firebaseData.dataType() == "int") {
+      minutes = firebaseData.intData();
+    }
+  } else {
+    Serial.println(firebaseData.errorReason());
+  }
+  
+  timeClient.begin();
 
   // Sensor de impressão digital
   finger.begin(57600);
@@ -34,17 +108,37 @@ void setup() {
     Serial.println("Sensor não encontrado");
     while (1) { delay(1); }
   }
+
+  pinMode(2, OUTPUT);
+  digitalWrite(2, HIGH);
+
 }
 
 void loop() {
-  Blynk.run();
   fingerprint();
+  timeClient.update();
+  if (Firebase.getInt(firebaseData, "/cadastrar")) {
+      if (firebaseData.dataType() == "int") {
+        cadastrar = firebaseData.intData();
+        if (cadastrar != 0){
+           Serial.println(cadastrar);
+           id = cadastrar;
+           cadastrarFingerprint();
+           cadastrar = 0;
+           Firebase.setInt(firebaseData, "/cadastrar", cadastrar);
+        }
+      }
+    } else {
+      Serial.println(firebaseData.errorReason());
+    }
 }
 
 uint8_t cadastrarFingerprint(){
 
   int p = -1;
   Serial.print("Coloque seu dedo para iniciar o cadastro.");
+  digitalWrite(2, LOW);
+  //delay(2000);
 
   while (p != FINGERPRINT_OK) {
     p = finger.getImage();
@@ -99,6 +193,7 @@ uint8_t cadastrarFingerprint(){
   }
 
   Serial.println("Remova seu dedo");
+  digitalWrite(2, HIGH);
   
   delay(2000);
   p = 0;
@@ -109,7 +204,8 @@ uint8_t cadastrarFingerprint(){
   
   p = -1;
   Serial.println("Coloque o seu dedo novamente");
-
+  digitalWrite(2, LOW);
+    
   while (p != FINGERPRINT_OK) {
     p = finger.getImage();
     switch (p) {
@@ -188,7 +284,8 @@ uint8_t cadastrarFingerprint(){
   p = finger.storeModel(id);
   if (p == FINGERPRINT_OK) {
     Serial.println("Impressão digital cadastrada!");
-
+    digitalWrite(2, HIGH);
+    delay(2000);
   } else if (p == FINGERPRINT_PACKETRECIEVEERR) {
     Serial.println("Erro de comunicação");
     return p;
@@ -206,7 +303,6 @@ uint8_t cadastrarFingerprint(){
     return p;
   }   
 }
-
 
 uint8_t getFingerprintID() {
   uint8_t p = finger.getImage();
@@ -281,21 +377,86 @@ int fingerprint() {
   if (p != FINGERPRINT_OK)  return -1;
   
   // found a match!
-  Serial.print("Impressão digital reconhecida! "); Serial.print(finger.fingerID);
+  Serial.print("Impressão digital reconhecida! #"); Serial.println(finger.fingerID);
 
-  // ligar o motor se reconhecer
-  digitalWrite(5, LOW);
-  delay(5000);
-  digitalWrite(5, HIGH);
+  digitalWrite(2, LOW);
+  delay(2000);
+  digitalWrite(2, HIGH);
+
+   // Se atrasou?
+  hoursNow =  String(timeClient.getHours()).toInt();
+  minutesNow = String(timeClient.getMinutes()).toInt();;
+  timestamps = String(timeClient.getEpochTime());
+
+  if (Firebase.getInt(firebaseData, "/users/" + String(finger.fingerID) + "/paraComparar")) {
+    if (firebaseData.dataType() == "int") {
+      paraComparar = firebaseData.intData();
+      Serial.println(firebaseData.intData());
+    }
+  } else {
+    Serial.println(firebaseData.errorReason());
+  }
+
+
+  if (paraComparar != compare) {
+
+    if(hoursNow < hours) {
+      atrasado = false;
+    } else if (hoursNow == hours){
+      if(minutesNow <= minutes) {
+        atrasado = false;
+      } else {
+        atrasado = true;
+      }
+    } else {
+      atrasado = true;
+    }
+    
+    // Send to db
+    if(Firebase.setInt(firebaseData, "/users/" + String(finger.fingerID) + "/paraComparar", compare) ) {
+      Serial.println("pronto");
+    }
+
+    batidosHoje++;
+    if(Firebase.setInt(firebaseData, "/batidosHoje", batidosHoje) ) {
+      Serial.println("pronto");
+    }
+    
+    if(Firebase.setBool(firebaseData, "/pontos/" + String(finger.fingerID) + "-" + timestamps + "/atrasado", atrasado )) {
+      Serial.println("pronto");
+    } else {
+      Serial.println("erro");
+    }
+
+    if(Firebase.setString(firebaseData, "/pontos/" + String(finger.fingerID) + "-" + timestamps + "/id", String(finger.fingerID) )) {
+      Serial.println("pronto");
+    } else {
+      Serial.println("erro");
+    }
+
+    if(Firebase.setInt(firebaseData, "/pontos/" + String(finger.fingerID) + "-" + timestamps + "/timestamp", timestamps.toInt() )) {
+      Serial.println("pronto");
+    } else {
+      Serial.println("erro");
+    }
+
+    if (Firebase.getString(firebaseData, "/users/" + String(finger.fingerID) + "/nome")) {
+      if (firebaseData.dataType() == "string") {
+        nome = firebaseData.stringData();
+      }
+    } else {
+      Serial.println(firebaseData.errorReason());
+    }
+    
+    Firebase.setString(firebaseData, "/pontos/" + String(finger.fingerID) + "-" + timestamps + "/nome", nome);
+
+    // Reiniciar contagens
+    if(batidosHoje == quantidade) {
+      Firebase.setInt(firebaseData, "/compare", !compare);
+      Firebase.setInt(firebaseData, "/batidosHoje", 0);
+    }
+
+  ;}
   
   return finger.fingerID; 
-}
-
-
-
-BLYNK_WRITE(V2){
-
-  while (!cadastrarFingerprint());
-  Blynk.virtualWrite(V2, 0);
-   
 }
